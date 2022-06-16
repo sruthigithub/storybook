@@ -1,3 +1,5 @@
+/// <reference types="jest" />;
+
 import {
   STORY_ARGS_UPDATED,
   UPDATE_STORY_ARGS,
@@ -15,48 +17,51 @@ import { mockChannel } from '@storybook/addons';
 import { getEventMetadata } from '../lib/events';
 
 import { init as initStories } from '../modules/stories';
-import { StoryEntry, SetStoriesStoryData, SetStoriesStory, StoryIndex } from '../lib/stories';
+import {
+  StoryEntry,
+  SetStoriesStoryData,
+  SetStoriesStory,
+  StoryIndex,
+  StoryIndexV3,
+} from '../lib/stories';
 import type Store from '../store';
 import { ModuleArgs } from '..';
 
-const mockStories: jest.MockedFunction<() => StoryIndex['entries']> = jest.fn();
+const mockIndex: jest.MockedFunction<() => StoryIndex | StoryIndexV3> = jest.fn();
 
 jest.mock('../lib/events');
 jest.mock('global', () => ({
   ...(jest.requireActual('global') as Record<string, any>),
-  fetch: jest.fn(() => ({ json: () => ({ v: 4, entries: mockStories() }) })),
+  fetch: jest.fn(() => ({ json: () => mockIndex() })),
   FEATURES: { storyStoreV7: true },
   CONFIG_TYPE: 'DEVELOPMENT',
 }));
 
 const getEventMetadataMock = getEventMetadata as jest.MockedFunction<typeof getEventMetadata>;
 
-const mockIndex = {
-  'component-a--story-1': {
-    id: 'component-a--story-1',
-    title: 'Component A',
-    name: 'Story 1',
-    importPath: './path/to/component-a.ts',
-  },
-  'component-a--story-2': {
-    id: 'component-a--story-2',
-    title: 'Component A',
-    name: 'Story 2',
-    importPath: './path/to/component-a.ts',
-  },
-  'component-b--story-3': {
-    id: 'component-b--story-3',
-    title: 'Component B',
-    name: 'Story 3',
-    importPath: './path/to/component-b.ts',
+const mockIndexData = {
+  v: 4,
+  entries: {
+    'component-a--story-1': {
+      id: 'component-a--story-1',
+      title: 'Component A',
+      name: 'Story 1',
+      importPath: './path/to/component-a.ts',
+    },
+    'component-a--story-2': {
+      id: 'component-a--story-2',
+      title: 'Component A',
+      name: 'Story 2',
+      importPath: './path/to/component-a.ts',
+    },
+    'component-b--story-3': {
+      id: 'component-b--story-3',
+      title: 'Component B',
+      name: 'Story 3',
+      importPath: './path/to/component-b.ts',
+    },
   },
 };
-
-beforeEach(() => {
-  getEventMetadataMock.mockReturnValue({ sourceType: 'local' } as any);
-  getEventMetadataMock.mockReturnValue({ sourceType: 'local' } as any);
-  mockStories.mockReset().mockReturnValue(mockIndex);
-});
 
 function createMockStore(initialState = {}) {
   let state = initialState;
@@ -120,9 +125,11 @@ const setStoriesData: SetStoriesStoryData = {
 beforeEach(() => {
   provider.getConfig.mockReset().mockReturnValue({});
   provider.serverChannel = mockChannel();
-  global.fetch
-    .mockReset()
-    .mockReturnValue({ status: 200, json: () => ({ v: 4, entries: mockStories() }) });
+  mockIndex.mockReset().mockReturnValue(mockIndexData);
+  global.fetch.mockReset().mockReturnValue({ status: 200, json: () => mockIndex() });
+
+  getEventMetadataMock.mockReturnValue({ sourceType: 'local' } as any);
+  getEventMetadataMock.mockReturnValue({ sourceType: 'local' } as any);
 });
 
 describe('stories API', () => {
@@ -143,7 +150,7 @@ describe('stories API', () => {
 
   describe('setStories', () => {
     beforeEach(() => {
-      mockStories.mockRejectedValue(new Error('Fetch failed') as never);
+      mockIndex.mockRejectedValue(new Error('Fetch failed') as never);
     });
 
     it('stores basic kinds and stories w/ correct keys', () => {
@@ -887,7 +894,7 @@ describe('stories API', () => {
         } = initStories({ store, navigate, provider } as any);
         setStories(setStoriesData);
 
-        selectStory(null, '2');
+        selectStory(undefined, '2');
         expect(navigate).toHaveBeenCalledWith('/story/a--2');
       });
     });
@@ -1014,7 +1021,7 @@ describe('stories API', () => {
 
       const { storiesConfigured, storiesFailed } = store.getState();
       expect(storiesConfigured).toBe(true);
-      expect(storiesFailed.message).toMatch(/sorting error/);
+      expect(storiesFailed?.message).toMatch(/sorting error/);
     });
 
     it('sets the initial set of stories in the stories hash', async () => {
@@ -1059,14 +1066,17 @@ describe('stories API', () => {
     });
 
     it('moves rootless stories to the front of the list', async () => {
-      mockStories.mockReset().mockReturnValue({
-        'root-first--story-1': {
-          id: 'root-first--story-1',
-          title: 'Root/First',
-          name: 'Story 1',
-          importPath: './path/to/root/first.ts',
+      mockIndex.mockReset().mockReturnValue({
+        v: 4,
+        entries: {
+          'root-first--story-1': {
+            id: 'root-first--story-1',
+            title: 'Root/First',
+            name: 'Story 1',
+            importPath: './path/to/root/first.ts',
+          },
+          ...mockIndexData.entries,
         },
-        ...mockIndex,
       });
 
       const navigate = jest.fn();
@@ -1115,13 +1125,16 @@ describe('stories API', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
 
       global.fetch.mockClear();
-      mockStories.mockReturnValueOnce({
-        'component-a--story-1': {
-          type: 'story',
-          id: 'component-a--story-1',
-          title: 'Component A',
-          name: 'Story 1',
-          importPath: './path/to/component-a.ts',
+      mockIndex.mockReturnValueOnce({
+        v: 4,
+        entries: {
+          'component-a--story-1': {
+            type: 'story',
+            id: 'component-a--story-1',
+            title: 'Component A',
+            name: 'Story 1',
+            importPath: './path/to/component-a.ts',
+          },
         },
       });
       provider.serverChannel.emit(STORY_INDEX_INVALIDATED);
@@ -1134,36 +1147,136 @@ describe('stories API', () => {
       expect(Object.keys(storedStoriesHash)).toEqual(['component-a', 'component-a--story-1']);
     });
 
-    // TODO: we should re-implement this for v3 story index
-    it.skip('infers docs only if there is only one story and it has the name "Page"', async () => {});
+    describe('for the v3 index', () => {
+      it('infers docs only if there is only one story and it has the name "Page"', async () => {
+        mockIndex.mockReset().mockReturnValue({
+          v: 3,
+          stories: {
+            'component-a--page': {
+              id: 'component-a--page',
+              title: 'Component A',
+              name: 'Page', // Called "Page" but not only story
+              importPath: './path/to/component-a.ts',
+            },
+            'component-a--story-2': {
+              id: 'component-a--story-2',
+              title: 'Component A',
+              name: 'Story 2',
+              importPath: './path/to/component-a.ts',
+            },
+            'component-b--page': {
+              id: 'component-b--page',
+              title: 'Component B',
+              name: 'Page', // Page and only story
+              importPath: './path/to/component-b.ts',
+            },
+            'component-c--story-4': {
+              id: 'component-c--story-4',
+              title: 'Component c',
+              name: 'Story 4', // Only story but not page
+              importPath: './path/to/component-c.ts',
+            },
+          },
+        });
+
+        const navigate = jest.fn();
+        const store = createMockStore();
+        const fullAPI = Object.assign(new EventEmitter(), {
+          setStories: jest.fn(),
+        });
+
+        const { api, init } = initStories({ store, navigate, provider, fullAPI } as any);
+        Object.assign(fullAPI, api);
+
+        global.fetch.mockClear();
+        await init();
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+
+        const { storiesHash: storedStoriesHash } = store.getState();
+
+        // We need exact key ordering, even if in theory JS doesn't guarantee it
+        expect(Object.keys(storedStoriesHash)).toEqual([
+          'component-a',
+          'component-a--page',
+          'component-a--story-2',
+          'component-b',
+          'component-b--page',
+          'component-c',
+          'component-c--story-4',
+        ]);
+        expect(storedStoriesHash['component-a--page'].type).toBe('story');
+        expect(storedStoriesHash['component-a--story-2'].type).toBe('story');
+        expect(storedStoriesHash['component-b--page'].type).toBe('docs');
+        expect(storedStoriesHash['component-c--story-4'].type).toBe('story');
+      });
+
+      it('prefers parameters.docsOnly to inferred docsOnly status', async () => {
+        mockIndex.mockReset().mockReturnValue({
+          v: 3,
+          stories: {
+            'component-a--docs': {
+              id: 'component-a--docs',
+              title: 'Component A',
+              name: 'Docs', // Called 'Docs' rather than 'Page'
+              importPath: './path/to/component-a.ts',
+              parameters: {
+                docsOnly: true,
+              },
+            },
+          },
+        });
+
+        const navigate = jest.fn();
+        const store = createMockStore();
+        const fullAPI = Object.assign(new EventEmitter(), {
+          setStories: jest.fn(),
+        });
+
+        const { api, init } = initStories({ store, navigate, provider, fullAPI } as any);
+        Object.assign(fullAPI, api);
+
+        global.fetch.mockClear();
+        await init();
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+
+        const { storiesHash: storedStoriesHash } = store.getState();
+
+        // We need exact key ordering, even if in theory JS doesn't guarantee it
+        expect(Object.keys(storedStoriesHash)).toEqual(['component-a', 'component-a--docs']);
+        expect(storedStoriesHash['component-a--docs'].type).toBe('docs');
+      });
+    });
 
     it('handles docs entries', async () => {
-      mockStories.mockReset().mockReturnValue({
-        'component-a--page': {
-          id: 'component-a--page',
-          title: 'Component A',
-          name: 'Page',
-          importPath: './path/to/component-a.ts',
-        },
-        'component-a--story-2': {
-          id: 'component-a--story-2',
-          title: 'Component A',
-          name: 'Story 2',
-          importPath: './path/to/component-a.ts',
-        },
-        'component-b': {
-          type: 'docs',
-          id: 'component-b--docs',
-          title: 'Component B',
-          name: 'Docs',
-          importPath: './path/to/component-b.ts',
-          storiesImports: [],
-        },
-        'component-c--story-4': {
-          id: 'component-c--story-4',
-          title: 'Component c',
-          name: 'Story 4',
-          importPath: './path/to/component-c.ts',
+      mockIndex.mockReset().mockReturnValue({
+        v: 4,
+        entries: {
+          'component-a--page': {
+            id: 'component-a--page',
+            title: 'Component A',
+            name: 'Page',
+            importPath: './path/to/component-a.ts',
+          },
+          'component-a--story-2': {
+            id: 'component-a--story-2',
+            title: 'Component A',
+            name: 'Story 2',
+            importPath: './path/to/component-a.ts',
+          },
+          'component-b': {
+            type: 'docs',
+            id: 'component-b--docs',
+            title: 'Component B',
+            name: 'Docs',
+            importPath: './path/to/component-b.ts',
+            storiesImports: [],
+          },
+          'component-c--story-4': {
+            id: 'component-c--story-4',
+            title: 'Component c',
+            name: 'Story 4',
+            importPath: './path/to/component-c.ts',
+          },
         },
       });
 
@@ -1176,7 +1289,9 @@ describe('stories API', () => {
       const { api, init } = initStories({ store, navigate, provider, fullAPI } as any);
       Object.assign(fullAPI, api);
 
+      global.fetch.mockClear();
       await init();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
 
       const { storiesHash: storedStoriesHash } = store.getState();
 
@@ -1305,7 +1420,7 @@ describe('stories API', () => {
 
       const { storiesConfigured, storiesFailed } = store.getState();
       expect(storiesConfigured).toBe(true);
-      expect(storiesFailed.message).toMatch(/Failed to run configure/);
+      expect(storiesFailed?.message).toMatch(/Failed to run configure/);
     });
   });
 

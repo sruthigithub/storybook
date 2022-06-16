@@ -51,5 +51,11 @@ const config: StorybookConfig = {
   //     ...c,
   //   };
   // },
+  refs: {
+    '64': {
+      title: '6.4',
+      url: 'http://localhost:6006',
+    },
+  },
 };
 module.exports = config;
